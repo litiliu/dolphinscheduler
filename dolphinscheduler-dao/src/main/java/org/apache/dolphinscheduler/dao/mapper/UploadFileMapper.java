@@ -15,44 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.dolphinscheduler.spi.enums;
+package org.apache.dolphinscheduler.dao.mapper;
 
-import com.baomidou.mybatisplus.annotation.EnumValue;
+import org.apache.dolphinscheduler.dao.entity.UploadFile;
 
-/**
- * resource type
- */
-public enum ResourceType {
+import org.apache.ibatis.annotations.Param;
 
-    /**
-     * 0 file, 1 udf
-     */
-    FILE(0, "file"),
-    UDF(1, "udf");
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
-    ResourceType(int code, String descp) {
-        this.code = code;
-        this.descp = descp;
-    }
-
-    @EnumValue
-    private final int code;
-    private final String descp;
-
-    public int getCode() {
-        return code;
-    }
-
-    public String getDescp() {
-        return descp;
-    }
-
-    public static ResourceType getByCode(int code) {
-        for (ResourceType value : ResourceType.values()) {
-            if (value.getCode() == code) {
-                return value;
-            }
-        }
-        return null;
-    }
+public interface UploadFileMapper extends BaseMapper<UploadFile> {
 }

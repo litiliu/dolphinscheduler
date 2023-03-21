@@ -25,6 +25,7 @@ import static org.apache.dolphinscheduler.common.constants.Constants.FORMAT_S_S;
 import static org.apache.dolphinscheduler.common.constants.Constants.JAR;
 import static org.apache.dolphinscheduler.common.constants.Constants.PERIOD;
 
+import org.apache.dolphinscheduler.api.dto.ParallelUploadRequestParam;
 import org.apache.dolphinscheduler.api.dto.resources.DeleteDataTransferResponse;
 import org.apache.dolphinscheduler.api.dto.resources.ResourceComponent;
 import org.apache.dolphinscheduler.api.dto.resources.filter.ResourceFilter;
@@ -37,6 +38,7 @@ import org.apache.dolphinscheduler.api.service.ResourcesService;
 import org.apache.dolphinscheduler.api.utils.PageInfo;
 import org.apache.dolphinscheduler.api.utils.RegexUtils;
 import org.apache.dolphinscheduler.api.utils.Result;
+import org.apache.dolphinscheduler.api.utils.ResultWrapper;
 import org.apache.dolphinscheduler.common.constants.Constants;
 import org.apache.dolphinscheduler.common.enums.AuthorizationType;
 import org.apache.dolphinscheduler.common.enums.ProgramType;
@@ -51,6 +53,7 @@ import org.apache.dolphinscheduler.dao.entity.ResourcesTask;
 import org.apache.dolphinscheduler.dao.entity.TaskDefinition;
 import org.apache.dolphinscheduler.dao.entity.Tenant;
 import org.apache.dolphinscheduler.dao.entity.UdfFunc;
+import org.apache.dolphinscheduler.dao.entity.UploadFile;
 import org.apache.dolphinscheduler.dao.entity.User;
 import org.apache.dolphinscheduler.dao.mapper.ProcessDefinitionLogMapper;
 import org.apache.dolphinscheduler.dao.mapper.ProcessTaskRelationMapper;
@@ -60,6 +63,7 @@ import org.apache.dolphinscheduler.dao.mapper.ResourceUserMapper;
 import org.apache.dolphinscheduler.dao.mapper.TaskDefinitionMapper;
 import org.apache.dolphinscheduler.dao.mapper.TenantMapper;
 import org.apache.dolphinscheduler.dao.mapper.UdfFuncMapper;
+import org.apache.dolphinscheduler.dao.mapper.UploadFileMapper;
 import org.apache.dolphinscheduler.dao.mapper.UserMapper;
 import org.apache.dolphinscheduler.plugin.storage.api.StorageEntity;
 import org.apache.dolphinscheduler.plugin.storage.api.StorageOperate;
@@ -85,20 +89,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import lombok.extern.slf4j.Slf4j;
-
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.base.Joiner;
 import com.google.common.io.Files;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * resources service impl
@@ -142,6 +150,9 @@ public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesSe
 
     @Autowired(required = false)
     private StorageOperate storageOperate;
+
+    @Autowired
+    private UploadFileMapper uploadFileMapper;
 
     /**
      * create directory
@@ -612,56 +623,54 @@ public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesSe
         Result<Object> result = new Result<>();
         putMsg(result, Status.SUCCESS);
 
-        if (FileUtils.directoryTraversal(name)) {
-            log.warn("Parameter file alias name verify failed, fileAliasName:{}.", RegexUtils.escapeNRT(name));
-            putMsg(result, Status.VERIFY_PARAMETER_NAME_FAILED);
-            return result;
-        }
-
-        if (file != null && FileUtils.directoryTraversal(Objects.requireNonNull(file.getOriginalFilename()))) {
-            log.warn("File original name verify failed, fileOriginalName:{}.",
-                    RegexUtils.escapeNRT(file.getOriginalFilename()));
-            putMsg(result, Status.VERIFY_PARAMETER_NAME_FAILED);
-            return result;
-        }
-
-        if (file != null) {
+        if (Objects.isNull(file) || file.isEmpty()) {
             // file is empty
             if (file.isEmpty()) {
                 log.warn("Parameter file is empty, fileOriginalName:{}.",
-                        RegexUtils.escapeNRT(file.getOriginalFilename()));
-                putMsg(result, Status.RESOURCE_FILE_IS_EMPTY);
-                return result;
+                    RegexUtils.escapeNRT(file.getOriginalFilename()));
             }
-
-            // file suffix
-            String fileSuffix = Files.getFileExtension(file.getOriginalFilename());
-            String nameSuffix = Files.getFileExtension(name);
-
-            // determine file suffix
-            if (!fileSuffix.equalsIgnoreCase(nameSuffix)) {
-                // rename file suffix and original suffix must be consistent
-                log.warn("Rename file suffix and original suffix must be consistent, fileOriginalName:{}.",
-                        RegexUtils.escapeNRT(file.getOriginalFilename()));
-                putMsg(result, Status.RESOURCE_SUFFIX_FORBID_CHANGE);
-                return result;
-            }
-
-            // If resource type is UDF, only jar packages are allowed to be uploaded, and the suffix must be .jar
-            if (Constants.UDF.equals(type.name()) && !JAR.equalsIgnoreCase(fileSuffix)) {
-                log.warn(Status.UDF_RESOURCE_SUFFIX_NOT_JAR.getMsg());
-                putMsg(result, Status.UDF_RESOURCE_SUFFIX_NOT_JAR);
-                return result;
-            }
-            if (file.getSize() > Constants.MAX_FILE_SIZE) {
-                log.warn(
-                        "Resource file size is larger than max file size, fileOriginalName:{}, fileSize:{}, maxFileSize:{}.",
-                        RegexUtils.escapeNRT(file.getOriginalFilename()), file.getSize(), Constants.MAX_FILE_SIZE);
-                putMsg(result, Status.RESOURCE_SIZE_EXCEED_LIMIT);
-                return result;
-            }
+            return Result.error(Status.RESOURCE_FILE_IS_EMPTY);
         }
-        return result;
+
+        return verifyFile(name, type, file.getOriginalFilename(), file.getSize());
+    }
+
+    private Result<Object> verifyFile(String name, ResourceType type, String originalFilename, long fileSize) {
+        if (FileUtils.directoryTraversal(name)) {
+            log.warn("Parameter file alias name verify failed, fileAliasName:{}.", RegexUtils.escapeNRT(name));
+            return Result.error(Status.VERIFY_PARAMETER_NAME_FAILED);
+        }
+
+        if (FileUtils.directoryTraversal(Objects.requireNonNull(originalFilename))) {
+            log.warn("File original name verify failed, fileOriginalName:{}.",
+                RegexUtils.escapeNRT(originalFilename));
+            return Result.error(Status.VERIFY_PARAMETER_NAME_FAILED);
+        }
+
+        // file suffix
+        String fileSuffix = Files.getFileExtension(originalFilename);
+        String nameSuffix = Files.getFileExtension(name);
+
+        // determine file suffix
+        if (!fileSuffix.equalsIgnoreCase(nameSuffix)) {
+            // rename file suffix and original suffix must be consistent
+            log.warn("Rename file suffix and original suffix must be consistent, fileOriginalName:{}.",
+                RegexUtils.escapeNRT(originalFilename));
+            return Result.error(Status.RESOURCE_SUFFIX_FORBID_CHANGE);
+        }
+
+        // If resource type is UDF, only jar packages are allowed to be uploaded, and the suffix must be .jar
+        if (Constants.UDF.equals(type.name()) && !JAR.equalsIgnoreCase(fileSuffix)) {
+            log.warn(Status.UDF_RESOURCE_SUFFIX_NOT_JAR.getMsg());
+            return Result.error(Status.UDF_RESOURCE_SUFFIX_NOT_JAR);
+        }
+        if (fileSize > Constants.MAX_FILE_SIZE) {
+            log.warn(
+                "Resource file size is larger than max file size, fileOriginalName:{}, fileSize:{}, maxFileSize:{}.",
+                RegexUtils.escapeNRT(originalFilename), fileSize, Constants.MAX_FILE_SIZE);
+           return Result.error(Status.RESOURCE_SIZE_EXCEED_LIMIT);
+        }
+        return Result.success();
     }
 
     /**
@@ -828,6 +837,10 @@ public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesSe
         String tenantCode = tenantMapper.queryById(loginUser.getTenantId()).getTenantCode();
         // random file name
         String localFilename = FileUtils.getUploadFilename(tenantCode, UUID.randomUUID().toString());
+        return upload(tenantCode, file, type, localFilename, fullName);
+    }
+
+    private boolean upload(String tenantCode, MultipartFile file, ResourceType type, String localFilename, String fullName) {
 
         // save file to hdfs, and delete original file
         String resourcePath = storageOperate.getDir(type, tenantCode);
@@ -1295,14 +1308,14 @@ public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesSe
 
     /**
      * get resource by id
-     * @param fullName resource full name
-     * @param resTenantCode tenantCode in the request field "resTenantCode" for tenant code owning the resource,
-     *                      can be different from the login user in the case of logging in as admin users.
+     *
+     * @param fullName      resource full name
+     * @param resTenantCode tenantCode in the request field "resTenantCode" for tenant code owning the resource, can be different from the login user in the case of logging in as admin users.
      * @return resource
      */
     @Override
     public Result<Object> queryResourceByFullName(User loginUser, String fullName, String resTenantCode,
-                                                  ResourceType type) throws IOException {
+        ResourceType type) throws IOException {
         Result<Object> result = new Result<>();
 
         User user = userMapper.selectById(loginUser.getId());
@@ -1345,6 +1358,191 @@ public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesSe
         result.setData(file);
         return result;
     }
+
+    /**
+     * the start and end phase of parallel phase
+     *
+     * @param loginUser login user
+     * @param param     param
+     * @return phase result
+     */
+    @Override
+    public Result startFinishPhase(User loginUser, ParallelUploadRequestParam param) {
+        final String phase = param.getPhase();
+        if (Constants.PARALLEL_UPLOAD_PHASE_START.equalsIgnoreCase(phase)) {
+            return startUpload(loginUser, param.getSize(), param.getName(), param.getCurrentDir(), param.getPid(), param.getDescription(), param.getType());
+        } else if (Constants.PARALLEL_UPLOAD_PHASE_FINISH.equalsIgnoreCase(phase)) {
+            return mergeFile(loginUser, param.getSessionId());
+        }
+        return Result.error(Status.UPLOAD_FILE_IN_PARALLEL_ERROR);
+    }
+
+    @Override
+    public Result uploadPhase(User loginUser, String phase, String sessionId, long startOffset, MultipartFile chunk) {
+        if (Constants.PARALLEL_UPLOAD_PHASE_UPLOAD.equalsIgnoreCase(phase)) {
+            try {
+                if (Objects.isNull(chunk) || chunk.isEmpty()) {
+                    return Result.error(Status.RESOURCE_FILE_IS_EMPTY);
+                }
+                QueryWrapper<UploadFile> queryWrapper = new QueryWrapper<>();
+                queryWrapper.eq("session_id", sessionId);
+                UploadFile uploadFile = uploadFileMapper.selectOne(queryWrapper);
+                if (Objects.isNull(uploadFile)) {
+                    return Result.error(Status.UPLOAD_FILE_IN_PARALLEL_ERROR);
+                }
+                // name file chunk with sessionID and offset
+                String chunkName = sessionId + Constants.DASH_SIGN + startOffset;
+                //local filename
+                String localFilename = FileUtils.getUploadFilename(uploadFile.getTenantCode(), chunkName);
+                // hdfs filename
+                String remoteName = storageOperate.getFileName(ResourceType.getByCode(uploadFile.getTypeCode()), uploadFile.getTenantCode(), chunkName);
+                if (upload(uploadFile.getTenantCode(), chunk, ResourceType.getByCode(uploadFile.getTypeCode()), localFilename, remoteName)) {
+                    // the frontend need to get upload status from `status` field
+                    ResultWrapper resultWrapper = new ResultWrapper();
+                    BeanUtils.copyProperties(Result.success(Boolean.TRUE), resultWrapper);
+                    resultWrapper.setStatus("success");
+                    return resultWrapper;
+                }
+            } catch (Exception e) {
+                log.error(e.getMessage(), e);
+            }
+        }
+        return Result.error(Status.UPLOAD_FILE_IN_PARALLEL_ERROR);
+    }
+
+    /**
+     * start phase of parallel uploading
+     * @param loginUser
+     * @param fileSize
+     * @param filename
+     * @param currentDir
+     * @param pid
+     * @param description
+     * @param type
+     * @return
+     */
+    private Result startUpload(User loginUser, long fileSize, String filename, String currentDir, Integer pid, String description, ResourceType type) {
+        Result<Object> result = checkResourceUploadStartupState();
+        if (!result.getCode().equals(Status.SUCCESS.getCode())) {
+            return result;
+        }
+
+        result = verifyPid(loginUser, pid);
+        if (!result.getCode().equals(Status.SUCCESS.getCode())) {
+            return result;
+        }
+
+        result = verifyFile(filename, type, filename, fileSize);
+        if (!result.getCode().equals(Status.SUCCESS.getCode())) {
+            return result;
+        }
+
+        // check resource name exists
+        String fullName = getFullName(currentDir, filename);
+        if (checkResourceExists(fullName)) {
+            log.error("resource {} has exist, can't recreate", RegexUtils.escapeNRT(filename));
+            putMsg(result, Status.RESOURCE_EXIST);
+            return result;
+        }
+
+        String sessionId = UUID.randomUUID().toString();
+        Function<Long, Long> calSplitSizeFunction = size -> {
+            // if the file size is not big enough, no need to use chunk split
+            if (size < 5 * Constants.MB_IN_BYTES) {
+                return size;
+            }
+            // chrome can establish at most 6 connections to the same host
+            return (Double.valueOf(Math.ceil(fileSize / 5.0d)).longValue());
+        };
+        Long splitSize = calSplitSizeFunction.apply(fileSize);
+        StringBuilder splitPaths = new StringBuilder();
+        try {
+            // query tenant
+            String tenantCode = tenantMapper.queryById(loginUser.getTenantId()).getTenantCode();
+            for (long startOffset = 0; startOffset < fileSize; startOffset += splitSize) {
+                String chunkName = sessionId + Constants.DASH_SIGN + startOffset;
+                String chunkHdfsName = storageOperate.getFileName(type, tenantCode, chunkName);
+                splitPaths.append(chunkHdfsName).append(Constants.SEMICOLON);
+            }
+            UploadFile file = new UploadFile(sessionId, pid, filename, description, fileSize, currentDir, splitPaths.toString(), tenantCode, type.getCode());
+            uploadFileMapper.insert(file);
+            Map<String, Object> data = new HashMap<>();
+            data.put(Constants.PARALLEL_UPLOAD_END_OFFSET, splitSize);
+            data.put(Constants.PARALLEL_UPLOAD_SESSION_ID, sessionId);
+            result.setData(data);
+            result.setMsg(Status.SUCCESS.getMsg());
+            //our frontend colleague is not will to change the vue-upload-component , so we need a wrapper
+            ResultWrapper resultWrapper = new ResultWrapper();
+            BeanUtils.copyProperties(result, resultWrapper);
+            resultWrapper.setStatus("success");
+            return resultWrapper;
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(Status.UPLOAD_FILE_IN_PARALLEL_ERROR);
+        }
+    }
+
+    /**
+     *
+     * merge file chunks into complete file
+     *
+     * first , download the chunks from the remote. second, upload to that merge result
+     *
+     * @param loginUser login user
+     * @param sessionId sessionId
+     * @return merge result
+     */
+    private Result mergeFile(User loginUser, String sessionId) {
+        if (StringUtils.isBlank(sessionId)) {
+            return Result.error(Status.UPLOAD_FILE_IN_PARALLEL_SESSION_ID_EMPTY_ERROR);
+        }
+        QueryWrapper<UploadFile> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("session_id", sessionId);
+        UploadFile file = uploadFileMapper.selectOne(queryWrapper);
+        if (Objects.isNull(file)) {
+            return Result.error(Status.MERGE_FILE_ERROR);
+        }
+        String currentDir = file.getCurrentDir();
+        if (StringUtils.isBlank(currentDir)) {
+            return Result.error(Status.CURRENT_DIR_EMPTY_ERROR);
+        }
+        try {
+            if (StringUtils.isNotEmpty(file.getSplitsPath())) {
+                TreeMap<Long, String> offsetFileNameMap = new TreeMap<>();
+                //download chunks to local
+                for (String chuckPath : file.getSplitsPath().split(Constants.SEMICOLON)) {
+                    String chunkName = chuckPath.substring(chuckPath.lastIndexOf(sessionId));
+                    //local filename
+                    String localFilename = FileUtils.getUploadFilename(file.getTenantCode(), chunkName);
+                    storageOperate.download(loginUser.getTenantCode(), chuckPath, localFilename, true, true);
+                    Long offset = Long.parseLong(localFilename.substring(localFilename.lastIndexOf(Constants.DASH_SIGN) + 1));
+                    offsetFileNameMap.put(offset, localFilename);
+                }
+                // merge chunks into dest file
+                File mergedResult = FileUtils.mergeFile(
+                    FileUtils.getUploadFilename(file.getTenantCode(), file.getName()), offsetFileNameMap.values());
+                // upload the dest file
+                ResourceType resourceType = ResourceType.getByCode(file.getTypeCode());
+                String fullName = getFullName(currentDir, file.getName());
+                String storageFileName = storageOperate.getFileName(resourceType, file.getTenantCode(), fullName);
+                storageOperate.upload(loginUser.getTenantCode(), mergedResult.getPath(), storageFileName, true, true);
+                Date now = new Date();
+                Resource resource = new Resource(file.getPid(), file.getName(), fullName, false, file.getDescription(), file.getName(), loginUser.getId(), resourceType, file.getSize(), now, now);
+                resourcesMapper.insert(resource);
+
+                // delete upload record
+                uploadFileMapper.delete(queryWrapper);
+                ResultWrapper resultWrapper = new ResultWrapper();
+                BeanUtils.copyProperties(Result.success(true), resultWrapper);
+                resultWrapper.setStatus("success");
+                return resultWrapper;
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
+        return Result.error(Status.MERGE_FILE_ERROR);
+    }
+
 
     /**
      * view resource file online
@@ -1392,7 +1590,7 @@ public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesSe
             List<String> strList = Arrays.asList(resourceViewSuffixes.split(","));
             if (!strList.contains(nameSuffix)) {
                 log.error("Resource suffix does not support view,resourceFullName:{}, suffix:{}.", fullName,
-                        nameSuffix);
+                    nameSuffix);
                 putMsg(result, Status.RESOURCE_SUFFIX_NOT_SUPPORT_VIEW);
                 return result;
             }

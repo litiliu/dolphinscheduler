@@ -42,6 +42,7 @@ import static org.apache.dolphinscheduler.api.enums.Status.VIEW_RESOURCE_FILE_ON
 import static org.apache.dolphinscheduler.api.enums.Status.VIEW_UDF_FUNCTION_ERROR;
 
 import org.apache.dolphinscheduler.api.aspect.AccessLogAnnotation;
+import org.apache.dolphinscheduler.api.dto.ParallelUploadRequestParam;
 import org.apache.dolphinscheduler.api.dto.resources.DeleteDataTransferResponse;
 import org.apache.dolphinscheduler.api.exceptions.ApiException;
 import org.apache.dolphinscheduler.api.service.ResourcesService;
@@ -67,6 +68,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -74,7 +76,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -771,5 +775,52 @@ public class ResourcesController extends BaseController {
                                           @RequestParam(value = "tenantCode") String tenantCode) throws IOException {
 
         return resourceService.queryResourceByFullName(loginUser, fullName, tenantCode, type);
+    }
+
+
+    /**
+     * start phase or finish phase of parallel upload
+     * @param param request param
+     * @return phase result
+     */
+    @Operation(summary = "upload-start-finish-phase", description = "UPLOAD_START_OR_FINISH_PHASE")
+    @Parameters({
+        @Parameter(name = "phase", description = "UPLOAD_PHASE", required = true,  schema = @Schema(implementation = String.class),  example = "start"),
+        @Parameter(name = "size", description = "FILE_SIZE",  schema = @Schema(implementation = Integer.class),  example = "100"),
+        @Parameter(name = "name", description = "FILE_NAME", schema = @Schema(implementation = String.class),  example = "name"),
+        @Parameter(name = "currentDir", description = "CURRENT_DIR", schema = @Schema(implementation = String.class),  example = "/opt"),
+        @Parameter(name = "pid", description = "PID_OF_THIS_FILE", schema = @Schema(implementation = Integer.class),  example = "-1"),
+        @Parameter(name = "description", description = "FILE_DESCRIPTION", schema = @Schema(implementation = String.class),  example = "this is a config file"),
+        @Parameter(name = "session_id", description = "FILE_UPLOAD_SESSION_ID", schema = @Schema(implementation = String.class),  example = "a-b-c")
+    })
+    @RequestMapping(value = "/upload", method = {RequestMethod.POST}, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Result startFinishPhase(@Parameter(hidden = true) @RequestAttribute(value = Constants.SESSION_USER) User loginUser,
+        @RequestBody ParallelUploadRequestParam param) {
+        return resourceService.startFinishPhase(loginUser, param);
+    }
+
+    /**
+     * the upload phase of parallel upload
+     * @param loginUser login user
+     * @param phase phase
+     * @param session_id sessionId
+     * @param start_offset start offset
+     * @param chunk content
+     * @return upload phase result
+     */
+    @Operation(summary = "upload-phase", description = "UPLOAD_PHASE")
+    @Parameters({
+        @Parameter(name = "phase", description = "PHASE", required = true,  schema = @Schema(implementation = String.class),  example = "upload"),
+        @Parameter(name = "session_id", description = "FILE_UPLOAD_SESSION_ID", required = true,  schema = @Schema(implementation = String.class),  example = "ABC"),
+        @Parameter(name = "start_offset", description = "FILE_CHUNK_START_OFFSET", required = true,  schema = @Schema(implementation = Integer.class),  example = "1000"),
+        @Parameter(name = "chunk", description = "FILE_CHUNK_CONTENT", required = true,  schema = @Schema(implementation = MultipartFile.class))
+    })
+    @RequestMapping(value = "/upload", method = {RequestMethod.POST}, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result uploadPhase(@Parameter(hidden = true) @RequestAttribute(value = Constants.SESSION_USER) User loginUser,
+        @RequestParam(value = "phase") String phase,
+        @RequestParam(value = "session_id") String session_id,
+        @RequestParam(value = "start_offset") long start_offset,
+        @RequestParam(value = "chunk") MultipartFile chunk) {
+        return resourceService.uploadPhase(loginUser, phase, session_id, start_offset, chunk);
     }
 }

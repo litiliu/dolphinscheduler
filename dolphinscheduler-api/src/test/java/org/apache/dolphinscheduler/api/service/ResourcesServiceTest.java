@@ -17,8 +17,10 @@
 
 package org.apache.dolphinscheduler.api.service;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 
+import org.apache.dolphinscheduler.api.dto.ParallelUploadRequestParam;
 import org.apache.dolphinscheduler.api.dto.resources.DeleteDataTransferResponse;
 import org.apache.dolphinscheduler.api.enums.Status;
 import org.apache.dolphinscheduler.api.permission.ResourcePermissionCheckService;
@@ -33,12 +35,14 @@ import org.apache.dolphinscheduler.common.utils.PropertyUtils;
 import org.apache.dolphinscheduler.dao.entity.Resource;
 import org.apache.dolphinscheduler.dao.entity.Tenant;
 import org.apache.dolphinscheduler.dao.entity.UdfFunc;
+import org.apache.dolphinscheduler.dao.entity.UploadFile;
 import org.apache.dolphinscheduler.dao.entity.User;
 import org.apache.dolphinscheduler.dao.mapper.ProcessDefinitionMapper;
 import org.apache.dolphinscheduler.dao.mapper.ResourceMapper;
 import org.apache.dolphinscheduler.dao.mapper.ResourceUserMapper;
 import org.apache.dolphinscheduler.dao.mapper.TenantMapper;
 import org.apache.dolphinscheduler.dao.mapper.UdfFuncMapper;
+import org.apache.dolphinscheduler.dao.mapper.UploadFileMapper;
 import org.apache.dolphinscheduler.dao.mapper.UserMapper;
 import org.apache.dolphinscheduler.plugin.storage.api.StorageEntity;
 import org.apache.dolphinscheduler.plugin.storage.api.StorageOperate;
@@ -46,18 +50,22 @@ import org.apache.dolphinscheduler.spi.enums.ResourceType;
 
 import org.apache.commons.collections4.CollectionUtils;
 
+import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 
+import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,6 +82,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockMultipartFile;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.common.io.Files;
@@ -110,6 +119,9 @@ public class ResourcesServiceTest {
 
     @Mock
     private ResourceUserMapper resourceUserMapper;
+
+    @Mock
+    private UploadFileMapper uploadFileMapper;
 
     @Mock
     private ResourcePermissionCheckService resourcePermissionCheckService;
@@ -284,7 +296,7 @@ public class ResourcesServiceTest {
         // SUCCESS
         Mockito.when(tenantMapper.queryById(1)).thenReturn(getTenant());
         try {
-            Mockito.when(storageOperate.exists(Mockito.any())).thenReturn(false);
+            Mockito.when(storageOperate.exists(any())).thenReturn(false);
         } catch (IOException e) {
             logger.error(e.getMessage(), e);
         }
@@ -527,8 +539,8 @@ public class ResourcesServiceTest {
         Mockito.when(userMapper.selectById(getUser().getId())).thenReturn(getUser());
         Mockito.when(tenantMapper.queryById(getUser().getTenantId())).thenReturn(getTenant());
         try {
-            Mockito.when(storageOperate.exists(Mockito.any())).thenReturn(true);
-            Mockito.when(storageOperate.vimFile(Mockito.any(), Mockito.any(), eq(1), eq(10))).thenReturn(getContent());
+            Mockito.when(storageOperate.exists(any())).thenReturn(true);
+            Mockito.when(storageOperate.vimFile(any(), any(), eq(1), eq(10))).thenReturn(getContent());
         } catch (IOException e) {
             logger.error("storage error", e);
         }
@@ -588,7 +600,7 @@ public class ResourcesServiceTest {
         Mockito.when(FileUtils.getUploadFilename(Mockito.anyString(), Mockito.anyString())).thenReturn("test");
         Mockito.when(FileUtils.writeContent2File(Mockito.anyString(), Mockito.anyString())).thenReturn(true);
         Mockito.when(storageOperate.getFileStatus(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.any())).thenReturn(getStorageEntityResource());
+            any())).thenReturn(getStorageEntityResource());
         StorageEntity storageEntity =
                 resourcesService.createOrUpdateResource(user.getUserName(), "filename.txt", "my-content");
         Assertions.assertNotNull(storageEntity);
@@ -683,7 +695,7 @@ public class ResourcesServiceTest {
             org.springframework.core.io.Resource resource = resourcesService.downloadResource(getUser(), "");
             Assertions.assertNull(resource);
 
-            Mockito.when(org.apache.dolphinscheduler.api.utils.FileUtils.file2Resource(Mockito.any()))
+            Mockito.when(org.apache.dolphinscheduler.api.utils.FileUtils.file2Resource(any()))
                     .thenReturn(resourceMock);
             resource = resourcesService.downloadResource(getUser(), "");
             Assertions.assertNotNull(resource);
@@ -735,8 +747,8 @@ public class ResourcesServiceTest {
         resIds.add(1);
         Mockito.when(resourcesMapper.queryResourceExceptUserId(userId)).thenReturn(getResourceList());
         Mockito.when(resourceUserMapper.queryResourcesIdListByUserIdAndPerm(Mockito.anyInt(), Mockito.anyInt()))
-                .thenReturn(resIds);
-        Mockito.when(resourcesMapper.queryResourceListById(Mockito.any())).thenReturn(getSingleResourceList());
+            .thenReturn(resIds);
+        Mockito.when(resourcesMapper.queryResourceListById(any())).thenReturn(getSingleResourceList());
         Map<String, Object> result = resourcesService.unauthorizedFile(user, userId);
         logger.info(result.toString());
         Assertions.assertEquals(Status.SUCCESS, result.get(Constants.STATUS));
@@ -821,8 +833,8 @@ public class ResourcesServiceTest {
         resIds.add(1);
         Mockito.when(resourcePermissionCheckService.functionDisabled()).thenReturn(false);
         Mockito.when(resourceUserMapper.queryResourcesIdListByUserIdAndPerm(Mockito.anyInt(), Mockito.anyInt()))
-                .thenReturn(resIds);
-        Mockito.when(resourcesMapper.queryResourceListById(Mockito.any())).thenReturn(getResourceList());
+            .thenReturn(resIds);
+        Mockito.when(resourcesMapper.queryResourceListById(any())).thenReturn(getResourceList());
         Map<String, Object> result = resourcesService.authorizedFile(user, userId);
         logger.info(result.toString());
         Assertions.assertEquals(Status.SUCCESS, result.get(Constants.STATUS));
@@ -833,8 +845,8 @@ public class ResourcesServiceTest {
         user.setId(2);
         user.setUserType(UserType.GENERAL_USER);
         Mockito.when(resourceUserMapper.queryResourcesIdListByUserIdAndPerm(Mockito.anyInt(), Mockito.anyInt()))
-                .thenReturn(resIds);
-        Mockito.when(resourcesMapper.queryResourceListById(Mockito.any())).thenReturn(getResourceList());
+            .thenReturn(resIds);
+        Mockito.when(resourcesMapper.queryResourceListById(any())).thenReturn(getResourceList());
         result = resourcesService.authorizedFile(user, userId);
         logger.info(result.toString());
         Assertions.assertEquals(Status.SUCCESS, result.get(Constants.STATUS));
@@ -867,7 +879,7 @@ public class ResourcesServiceTest {
         storageEntityList.add(storageEntity4);
         storageEntityList.add(storageEntity5);
 
-        Mockito.when(storageOperate.listFilesStatus(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
+        Mockito.when(storageOperate.listFilesStatus(any(), any(), any(), any()))
                 .thenReturn(storageEntityList);
 
         LocalDateTime localDateTime = LocalDateTime.of(2022, 1, 5, 0, 0, 0);
@@ -895,13 +907,140 @@ public class ResourcesServiceTest {
 
         // SUCCESS
         try {
-            List<String> list = storageOperate.vimFile(Mockito.any(), Mockito.anyString(), eq(1), eq(10));
+            List<String> list = storageOperate.vimFile(any(), Mockito.anyString(), eq(1), eq(10));
             Assertions.assertNotNull(list);
 
         } catch (IOException e) {
             logger.error("hadoop error", e);
         }
     }
+
+    @Test
+    public void testParallelismUploadStartPhase() {
+        long fileSize = 0;
+        String filename = "test.jar";
+        Mockito.when(Files.getFileExtension(filename)).thenReturn("jar");
+        PropertyUtils.getResUploadStartupState();
+        String currentDir = "/";
+        int pid = -1;
+
+        Result res;
+        ParallelUploadRequestParam param = new ParallelUploadRequestParam();
+        param.setDescription("desc");
+        param.setPid(pid);
+        param.setPhase(Constants.PARALLEL_UPLOAD_PHASE_START);
+        param.setName(filename);
+        param.setCurrentDir(currentDir);
+        param.setSize(fileSize);
+
+        //checkResourceUploadStartupState
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.STORAGE_NOT_STARTUP.getCode(), res.getCode().intValue());
+
+        Mockito.when(PropertyUtils.getResUploadStartupState()).thenReturn(true);
+        Mockito.when(tenantMapper.queryById(getUser().getTenantId())).thenReturn(getTenant());
+        //test file
+        param.setType(ResourceType.FILE);
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.SUCCESS.getCode(), res.getCode().intValue());
+        Assert.assertTrue(Objects.nonNull(res.getData()));
+        Map<String, Object> data = (Map<String, Object>) res.getData();
+        Assert.assertTrue(Objects.nonNull(data.get(Constants.PARALLEL_UPLOAD_END_OFFSET)));
+        Assert.assertTrue(Objects.nonNull(data.get(Constants.PARALLEL_UPLOAD_SESSION_ID)));
+
+        //test udf
+        param.setType(ResourceType.UDF);
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.SUCCESS.getCode(), res.getCode().intValue());
+        Assert.assertTrue(Objects.nonNull(res.getData()));
+        data = (Map<String, Object>) res.getData();
+        Assert.assertTrue(Objects.nonNull(data.get(Constants.PARALLEL_UPLOAD_END_OFFSET)));
+        Assert.assertTrue(Objects.nonNull(data.get(Constants.PARALLEL_UPLOAD_SESSION_ID)));
+    }
+
+    @Test
+    public void testParallelismUploadFinishPhase() throws Exception{
+        long fileSize = 0;
+        String filename = "test.jar";
+        Mockito.when(Files.getFileExtension(filename)).thenReturn("jar");
+        PropertyUtils.getResUploadStartupState();
+        String currentDir = "/";
+        int pid = -1;
+        String uploadSessionID = "sessionId";
+
+        ParallelUploadRequestParam param = new ParallelUploadRequestParam();
+        param.setDescription("desc");
+        param.setPid(pid);
+        param.setPhase(Constants.PARALLEL_UPLOAD_PHASE_FINISH);
+        param.setName(filename);
+        param.setCurrentDir(currentDir);
+        param.setSize(fileSize);
+
+        Result res;
+        // test sessionID is empty
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.UPLOAD_FILE_IN_PARALLEL_SESSION_ID_EMPTY_ERROR.getCode(), res.getCode().intValue());
+        param.setSessionId(uploadSessionID);
+
+        //test checkResourceUploadStartupState
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.MERGE_FILE_ERROR.getCode(), res.getCode().intValue());
+
+        //test current dir empty
+        UploadFile uploadFile = new UploadFile();
+        Mockito.when(uploadFileMapper.selectOne(any(QueryWrapper.class))).thenReturn(uploadFile);
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.CURRENT_DIR_EMPTY_ERROR.getCode(), res.getCode().intValue());
+
+        //test split path empty
+        uploadFile.setCurrentDir(currentDir);
+        Mockito.when(uploadFileMapper.selectOne(any(QueryWrapper.class))).thenReturn(uploadFile);
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.MERGE_FILE_ERROR.getCode(), res.getCode().intValue());
+
+        // test current Dir empty
+        uploadFile.setTenantCode(getUser().getTenantCode());
+        uploadFile.setSessionId(uploadSessionID);
+        uploadFile.setName(filename);
+        uploadFile.setSize(1l);
+        String chunk1 = uploadSessionID + Constants.DASH_SIGN + "1";
+        String chunk2 = uploadSessionID + Constants.DASH_SIGN + "2";
+        uploadFile.setSplitsPath(String.join(Constants.SEMICOLON, chunk1, chunk2));
+        Mockito.when(FileUtils.getUploadFilename(uploadFile.getTenantCode(), chunk1)).thenReturn(chunk1);
+        Mockito.when(FileUtils.getUploadFilename(uploadFile.getTenantCode(), chunk2)).thenReturn(chunk2);
+        Mockito.when(FileUtils.getUploadFilename(uploadFile.getTenantCode(), uploadFile.getName())).thenReturn(uploadFile.getName());
+        Mockito.doNothing().when(storageOperate).download(eq(uploadFile.getTenantCode()), any(String.class), any(String.class), eq(true), eq(true));
+        File mergedFile = new File("/mergedFile");
+        Mockito.when(FileUtils.mergeFile(any(String.class), any(Collection.class))).thenReturn(mergedFile);
+        Mockito.when(resourcesMapper.insert(any(Resource.class))).thenReturn(1);
+        Mockito.when(uploadFileMapper.delete(any(QueryWrapper.class))).thenReturn(1);
+        res = resourcesService.startFinishPhase(getUser(), param);
+        Assert.assertEquals(Status.SUCCESS.getCode(), res.getCode().intValue());
+    }
+
+    @Test
+    public void testParallelismUploadUploadPhase() {
+        String sessionId = "pp";
+        Result res;
+        //test wrong phase
+        res = resourcesService.uploadPhase(getUser(), Constants.PARALLEL_UPLOAD_PHASE_START, sessionId, 0, null);
+        Assertions.assertEquals(Status.UPLOAD_FILE_IN_PARALLEL_ERROR.getCode(), res.getCode().intValue());
+
+        // get file empty
+        res = resourcesService.uploadPhase(getUser(), Constants.PARALLEL_UPLOAD_PHASE_UPLOAD, sessionId, 0, null);
+        Assertions.assertEquals(Status.RESOURCE_FILE_IS_EMPTY.getCode(), res.getCode().intValue());
+
+        // test record not found
+        MockMultipartFile multipartFile = new MockMultipartFile("name", "content".getBytes());
+        res = resourcesService.uploadPhase(getUser(), Constants.PARALLEL_UPLOAD_PHASE_UPLOAD, sessionId, 0, multipartFile);
+        Assertions.assertEquals(Status.UPLOAD_FILE_IN_PARALLEL_ERROR.getCode(), res.getCode().intValue());
+
+        UploadFile uploadFile = new UploadFile();
+        Mockito.when(uploadFileMapper.selectOne(any(QueryWrapper.class))).thenReturn(uploadFile);
+        res = resourcesService.uploadPhase(getUser(), Constants.PARALLEL_UPLOAD_PHASE_UPLOAD, sessionId, 0, multipartFile);
+        Assertions.assertEquals(Status.SUCCESS.getCode(), res.getCode().intValue());
+    }
+
     private List<Resource> getResourceList() {
 
         List<Resource> resources = new ArrayList<>();

@@ -15,44 +15,15 @@
  * limitations under the License.
  */
 
-package org.apache.dolphinscheduler.spi.enums;
+package org.apache.dolphinscheduler.api.utils;
 
-import com.baomidou.mybatisplus.annotation.EnumValue;
+import lombok.Getter;
+import lombok.Setter;
 
-/**
- * resource type
- */
-public enum ResourceType {
+// better delete, can front end implement parallel upload itself
+@Getter
+@Setter
+public class ResultWrapper<T> extends Result<T> {
 
-    /**
-     * 0 file, 1 udf
-     */
-    FILE(0, "file"),
-    UDF(1, "udf");
-
-    ResourceType(int code, String descp) {
-        this.code = code;
-        this.descp = descp;
-    }
-
-    @EnumValue
-    private final int code;
-    private final String descp;
-
-    public int getCode() {
-        return code;
-    }
-
-    public String getDescp() {
-        return descp;
-    }
-
-    public static ResourceType getByCode(int code) {
-        for (ResourceType value : ResourceType.values()) {
-            if (value.getCode() == code) {
-                return value;
-            }
-        }
-        return null;
-    }
+    public String status;
 }

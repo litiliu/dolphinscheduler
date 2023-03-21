@@ -33,10 +33,16 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.NoSuchFileException;
+import java.util.Collection;
+import java.util.Map.Entry;
+import java.util.TreeMap;
 import java.util.zip.CRC32;
 import java.util.zip.CheckedInputStream;
+
+import com.google.common.io.ByteStreams;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -308,6 +314,31 @@ public class FileUtils {
         }
 
         return crcString;
+    }
+
+    /**
+     * merge the files in the given order to get the target file
+     *
+     * @param destFileName target file name
+     * @param files   chunkFiles
+     * @return the new file that represent the merge result
+     * @throws Exception exceptions
+     */
+    public static File mergeFile(String destFileName, Collection<String> files) {
+        File localMergedFile = new File(destFileName);
+        try (FileOutputStream fos = new FileOutputStream(localMergedFile)) {
+            for (String file : files) {
+                File chunkFile = new File(file);
+                FileInputStream fis = new FileInputStream(chunkFile);
+                ByteStreams.copy(fis, fos);
+                fis.close();
+                chunkFile.delete();
+            }
+            fos.flush();
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
+        return localMergedFile;
     }
 
 }

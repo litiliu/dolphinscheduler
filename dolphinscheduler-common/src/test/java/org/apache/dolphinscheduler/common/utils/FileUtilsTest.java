@@ -23,6 +23,7 @@ import org.apache.dolphinscheduler.common.constants.DataSourceConstants;
 
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.util.Arrays;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -139,7 +140,21 @@ public class FileUtilsTest {
         String dirPath = "test/";
 
         Assertions.assertDoesNotThrow(
-                () -> FileUtils.getFileChecksum(dirPath));
+            () -> FileUtils.getFileChecksum(dirPath));
+    }
+
+    @Test
+    void testMergeFile() throws Exception{
+        String filePath1 = "test/chunk-1";
+        String filePath2 = "test/chunk-2";
+        String content1 = "正正正faffdasfasdfas，한국어； 한글……にほんご\nfrançais";
+        String content2 = "正正正faffdasfasdfas，한국어； 한글……にほん\nfrançais";
+        FileUtils.writeContent2File(content1, filePath1);
+        FileUtils.writeContent2File(content2, filePath2);
+
+        String dstFileName = "test/dest.txt";
+        FileUtils.mergeFile(dstFileName, Arrays.asList(filePath1, filePath2));
+        Assertions.assertEquals(FileUtils.readFile2Str(new FileInputStream(dstFileName)), content1.concat(content2));
     }
 
 }

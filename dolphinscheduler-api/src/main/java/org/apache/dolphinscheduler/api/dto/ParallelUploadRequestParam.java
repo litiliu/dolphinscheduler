@@ -15,44 +15,30 @@
  * limitations under the License.
  */
 
-package org.apache.dolphinscheduler.spi.enums;
+package org.apache.dolphinscheduler.api.dto;
 
-import com.baomidou.mybatisplus.annotation.EnumValue;
+import org.apache.dolphinscheduler.spi.enums.ResourceType;
 
-/**
- * resource type
- */
-public enum ResourceType {
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-    /**
-     * 0 file, 1 udf
-     */
-    FILE(0, "file"),
-    UDF(1, "udf");
+import org.codehaus.jackson.annotate.JsonProperty;
 
-    ResourceType(int code, String descp) {
-        this.code = code;
-        this.descp = descp;
-    }
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class ParallelUploadRequestParam {
 
-    @EnumValue
-    private final int code;
-    private final String descp;
-
-    public int getCode() {
-        return code;
-    }
-
-    public String getDescp() {
-        return descp;
-    }
-
-    public static ResourceType getByCode(int code) {
-        for (ResourceType value : ResourceType.values()) {
-            if (value.getCode() == code) {
-                return value;
-            }
-        }
-        return null;
-    }
+    private String phase;
+    private Long size;
+    private String name;
+    private String currentDir;
+    private Integer pid;
+    private String description;
+    @JsonProperty(value = "session_id")
+    private String sessionId;
+    private ResourceType type;
 }

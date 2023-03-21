@@ -845,4 +845,18 @@ public final class Constants {
     public static final String REMOTE_LOGGING_S3_ENDPOINT = "remote.logging.s3.endpoint";
 
     public static final String REMOTE_LOGGING_S3_REGION = "remote.logging.s3.region";
+
+    public static final String PARALLEL_UPLOAD_PHASE_START = "start";
+
+    public static final String PARALLEL_UPLOAD_PHASE_UPLOAD = "upload";
+
+    public static final String PARALLEL_UPLOAD_PHASE_FINISH = "finish";
+    public static final String PARALLEL_UPLOAD_END_OFFSET = "end_offset";
+    public static final String PARALLEL_UPLOAD_SESSION_ID = "session_id";
+
+    public static final String DASH_SIGN = "-";
+
+    public static final Long MB_IN_BYTES = 1024 * 1024L;
+
+
 }

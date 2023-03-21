@@ -17,6 +17,7 @@
 
 package org.apache.dolphinscheduler.api.service;
 
+import org.apache.dolphinscheduler.api.dto.ParallelUploadRequestParam;
 import org.apache.dolphinscheduler.api.dto.resources.DeleteDataTransferResponse;
 import org.apache.dolphinscheduler.api.utils.PageInfo;
 import org.apache.dolphinscheduler.api.utils.Result;
@@ -270,5 +271,24 @@ public interface ResourcesService {
      */
     Result<Object> queryResourceByFullName(User loginUser, String fullName, String tenantCode,
                                            ResourceType type) throws IOException;
+
+    /**
+     * the start and end phase of parallel phase
+     * @param loginUser login user
+     * @param param  param
+     * @return phase result
+     */
+    Result startFinishPhase(User loginUser, ParallelUploadRequestParam param);
+
+    /**
+     * the upload phase of parallel phase
+     * @param loginUser login user
+     * @param phase param
+     * @param sessionId  sessionId
+     * @param startOffset chunk's startOffset
+     * @param chunk  chunk content
+     * @return upload phase result
+     */
+    Result uploadPhase(User loginUser, String phase, String sessionId, long startOffset, MultipartFile chunk);
 
 }
